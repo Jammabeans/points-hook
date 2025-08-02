@@ -65,12 +65,21 @@ contract PointsHook is BaseHook, ERC1155 {
         if (!key.currency0.isAddressZero()) return (this.afterSwap.selector, 0);
     
         // We only mint points if user is buying TOKEN with ETH
-        if (!swapParams.zeroForOne) return (this.afterSwap.selector, 0);
-    
+        if (!swapParams.zeroForOne) return (this.afterSwap.selector, 0);    
                
     
         uint256 ethSpendAmount = uint256(int256(-delta.amount0()));
+
+        uint256 BONUS_THRESHOLD = 0.0025 ether; 
+        uint256 BONUS_PERCENT = 10;         // 10%
+
         uint256 pointsForSwap = ethSpendAmount / 5;
+
+        // Bonus 10% points if over threshold
+        if (ethSpendAmount >= BONUS_THRESHOLD) {
+            uint256 bonusPoints = (pointsForSwap * BONUS_PERCENT) / 100;
+            pointsForSwap += bonusPoints;
+        }
     
         // Mint the points
         _assignPoints(key.toId(), hookData, pointsForSwap);

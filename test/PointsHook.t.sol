@@ -241,6 +241,50 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         assertEq(pointsBalanceAfter - pointsBalanceOriginal, 6 * 10 ** 14, "Points should accumulate over multiple swaps");
     }
 
+    function test_bonus_points_single_large_swap() public {
+        uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+        bytes memory hookData = abi.encode(address(this));
+        uint256 pointsBalanceOriginal = hook.balanceOf(address(this), poolIdUint);
+        console.log("Initial points balance:", pointsBalanceOriginal);
+
+        // Swap amount exactly at or above the threshold (10 ETH)
+        uint256 ethSwapAmount = 0.003 ether;
+
+        // Perform swap
+        swapRouter.swap{value: ethSwapAmount}(
+            key,
+            SwapParams({
+                zeroForOne: true,
+                amountSpecified: -int256(ethSwapAmount),
+                sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+            }),
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            hookData
+        );
+
+        uint256 pointsAfter = hook.balanceOf(address(this), poolIdUint);
+        console.log("Points after large swap:", pointsAfter);
+
+        // Base points = 20% of ETH spent
+        uint256 basePoints = ethSwapAmount / 5;
+
+        // Bonus points = 10% of base points
+        uint256 bonusPoints = (basePoints * 10) / 100;
+        console.log("Base points:", basePoints);
+        console.log("Bonus points:", bonusPoints);  
+
+        uint256 expectedPoints = basePoints + bonusPoints;
+
+        assertEq(
+            pointsAfter ,
+            expectedPoints,
+            "Points after large swap should include 10% bonus"
+        );
+    }
+
     // Test: Swaps by different users mint points to correct address
     function test_points_minted_to_correct_user() public {
         uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
