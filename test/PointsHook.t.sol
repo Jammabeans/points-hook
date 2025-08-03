@@ -72,7 +72,7 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
         uint160 sqrtPriceAtTickLower = TickMath.getSqrtPriceAtTick(-60);
         uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
     
-        uint256 ethToAdd = 0.003 ether;
+        uint256 ethToAdd = 3 ether;
         uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(
             SQRT_PRICE_1_1,
             sqrtPriceAtTickUpper,
@@ -374,4 +374,128 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
     }
 
 
-}    
+// Test: Owner can update bonus threshold and it affects swap behavior
+function test_owner_can_update_bonus_threshold() public {
+    uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+    bytes memory hookData = abi.encode(address(this));
+
+    // Set a new threshold higher than the swap amount
+    hook.setBonusThreshold(0.01 ether);
+
+    // Swap below new threshold, should get no bonus
+    uint256 ethSwapAmount = 0.003 ether;
+    uint256 pointsBalanceOriginal = hook.balanceOf(address(this), poolIdUint);
+
+    swapRouter.swap{value: ethSwapAmount}(
+        key,
+        SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(ethSwapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        }),
+        PoolSwapTest.TestSettings({
+            takeClaims: false,
+            settleUsingBurn: false
+        }),
+        hookData
+    );
+
+    uint256 pointsAfter = hook.balanceOf(address(this), poolIdUint);
+    uint256 expectedPoints = ethSwapAmount / 5; // No bonus
+    assertEq(pointsAfter - pointsBalanceOriginal, expectedPoints, "No bonus should be applied below new threshold");
+
+    // Now set threshold below swap amount
+    hook.setBonusThreshold(0.001 ether);
+
+    // Swap again, should get bonus
+    pointsBalanceOriginal = pointsAfter;
+    swapRouter.swap{value: ethSwapAmount}(
+        key,
+        SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(ethSwapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        }),
+        PoolSwapTest.TestSettings({
+            takeClaims: false,
+            settleUsingBurn: false
+        }),
+        hookData
+    );
+    pointsAfter = hook.balanceOf(address(this), poolIdUint);
+    uint256 basePoints = ethSwapAmount / 5;
+    uint256 bonusPoints = (basePoints * hook.getBonusPercent()) / 100;
+    expectedPoints = basePoints + bonusPoints;
+    assertEq(pointsAfter - pointsBalanceOriginal, expectedPoints, "Bonus should be applied above new threshold");
+}
+
+// Test: Owner can update bonus percent and it affects bonus calculation
+function test_owner_can_update_bonus_percent() public {
+    uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+    bytes memory hookData = abi.encode(address(this));
+
+    // Set threshold low so bonus always applies
+    hook.setBonusThreshold(0.001 ether);
+
+    // Set bonus percent to 50%
+    hook.setBonusPercent(50);
+
+    uint256 ethSwapAmount = 0.003 ether;
+    uint256 pointsBalanceOriginal = hook.balanceOf(address(this), poolIdUint);
+
+    swapRouter.swap{value: ethSwapAmount}(
+        key,
+        SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(ethSwapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        }),
+        PoolSwapTest.TestSettings({
+            takeClaims: false,
+            settleUsingBurn: false
+        }),
+        hookData
+    );
+
+    uint256 pointsAfter = hook.balanceOf(address(this), poolIdUint);
+    uint256 basePoints = ethSwapAmount / 5;
+    uint256 bonusPoints = (basePoints * 50) / 100;
+    uint256 expectedPoints = basePoints + bonusPoints;
+    assertEq(pointsAfter - pointsBalanceOriginal, expectedPoints, "Bonus percent should be updated and applied correctly");
+}
+    
+// Test: Owner can update base points percent and it affects points calculation
+function test_owner_can_update_base_points_percent() public {
+    uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+    bytes memory hookData = abi.encode(address(this));
+
+    // Set threshold low so bonus always applies
+    hook.setBonusThreshold(0.001 ether);
+
+    // Set base points percent to 50%
+    hook.setBasePointsPercent(50);
+
+    uint256 ethSwapAmount = 0.003 ether;
+    uint256 pointsBalanceOriginal = hook.balanceOf(address(this), poolIdUint);
+
+    swapRouter.swap{value: ethSwapAmount}(
+        key,
+        SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(ethSwapAmount),
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        }),
+        PoolSwapTest.TestSettings({
+            takeClaims: false,
+            settleUsingBurn: false
+        }),
+        hookData
+    );
+
+    uint256 pointsAfter = hook.balanceOf(address(this), poolIdUint);
+    uint256 basePoints = (ethSwapAmount * 50) / 100;
+    uint256 bonusPoints = (basePoints * hook.getBonusPercent()) / 100;
+    uint256 expectedPoints = basePoints + bonusPoints;
+    assertEq(pointsAfter - pointsBalanceOriginal, expectedPoints, "Base points percent should be updated and applied correctly");
+}
+}
